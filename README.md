@@ -369,8 +369,10 @@ wird. Aus 810 KB werden so 618 KB, mit gzip 179 KB.
 Every push to `main` builds the image, publishes it to
 `ghcr.io/digital-organizing/abstimmungsstudio` and deploys it to the
 organisation's app platform, where the app runs as `abstimmungsstudio-prod` on
-the host `app-daily`. The deploy job calls the shared workflow of the
-`digital-organizing/infra` repository and hands over `compose.deploy.yml`. It
+the host `app-daily`. The deploy job joins the tailnet, logs in to the
+app host through Tailscale SSH and hands over `compose.deploy.yml`; its steps
+are a copy of the shared workflow in the `digital-organizing/infra`
+repository, which this public repository cannot call. It
 needs the repository secrets `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET` and no
 SSH key. The platform runs `python manage.py migrate` before it switches to
 the new image.
