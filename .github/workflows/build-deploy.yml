@@ -1,10 +1,7 @@
 name: Docker
 
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
+# Builds the image, publishes it to ghcr.io/digital-organizing/abstimmungsstudio
+# and, on main, deploys it to the organisation's app platform.
 on:
   push:
     branches: ["main"]
@@ -12,12 +9,11 @@ on:
     tags: ["v*.*.*"]
   pull_request:
     branches: ["main"]
+  workflow_dispatch:
 
-env:
-  # Use docker.io for Docker Hub if empty
-  REGISTRY: ghcr.io
-  # github.repository as <account>/<repo>
-  IMAGE_NAME: ${{ github.repository }}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -25,51 +21,30 @@ jobs:
     permissions:
       contents: read
       packages: write
-      # This is used to complete the identity challenge
-      # with sigstore/fulcio when running outside of PRs.
-      id-token: write
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      # Install the cosign tool except on PR
-      # https://github.com/sigstore/cosign-installer
-      - name: Install cosign
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
         if: github.event_name != 'pull_request'
-        uses: sigstore/cosign-installer@6e04d228eb30da1757ee4e1dd75a0ec73a653e06 #v3.1.1
+        uses: docker/login-action@v3
         with:
-          cosign-release: "v2.1.1"
-
-      # Set up BuildKit Docker container builder to be able to build
-      # multi-platform images and export cache
-      # https://github.com/docker/setup-buildx-action
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
-
-      # Login against a Docker registry except on PR
-      # https://github.com/docker/login-action
-      - name: Log into registry ${{ env.REGISTRY }}
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
-        with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Extract metadata (tags, labels) for Docker
-      # https://github.com/docker/metadata-action
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934 # v5.0.0
+      - id: meta
+        uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=sha
 
-      # Build and push Docker image with Buildx (don't push on PR)
-      # https://github.com/docker/build-push-action
-      - name: Build and push Docker image
-        id: build-and-push
-        uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
+      - uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile
@@ -79,21 +54,21 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Add SSH Key
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SERVER_SSH_KEY }}
-
-      - name: Add remote server to known hosts
-        run: |
-          ssh-keyscan ${{ vars.REMOTE_HOST }} >> ~/.ssh/known_hosts
-
-      - name: Pull Docker Images and Update Application
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          ssh debian@${{ vars.REMOTE_HOST }} << EOF
-            cd ${{ vars.APPLICATION_PATH }}
-            docker compose pull
-            docker compose up -d
-            docker compose exec -T web uv run manage.py migrate
-          EOF
+  # Hands compose.deploy.yml to the app platform (digital-organizing/infra):
+  # the job joins the tailnet and logs in to the app host through Tailscale
+  # SSH, so this repository holds no SSH key. The platform runs the
+  # migrations before it switches to the new image.
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: read
+    uses: digital-organizing/infra/.github/workflows/deploy.yml@main
+    with:
+      app: abstimmungsstudio-prod
+      host: app-daily
+      compose-file: compose.deploy.yml
+    secrets:
+      TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+      TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}

@@ -363,3 +363,21 @@ Die Geodaten werden beim Ausliefern verkleinert: Bezirke fallen weg, die
 Ebenen heissen `land`, `kantone`, `gemeinden`, `zaehlkreise` und `seen`, und
 je Fläche bleiben nur die Eigenschaften, auf die verbunden oder beschriftet
 wird. Aus 810 KB werden so 618 KB, mit gzip 179 KB.
+
+## Deployment
+
+Every push to `main` builds the image, publishes it to
+`ghcr.io/digital-organizing/abstimmungsstudio` and deploys it to the
+organisation's app platform, where the app runs as `abstimmungsstudio-prod` on
+the host `app-daily`. The deploy job calls the shared workflow of the
+`digital-organizing/infra` repository and hands over `compose.deploy.yml`. It
+needs the repository secrets `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET` and no
+SSH key. The platform runs `python manage.py migrate` before it switches to
+the new image.
+
+What the app gets on the server is decided in the infra repository, not here:
+`apps/abstimmungsstudio.yml` (domain, limits, the settings that are not
+secret) and `secrets/daily/abstimmungsstudio.prod.yaml` (`SECRET_KEY`, the
+InfluxDB token, the object storage keys, the API tokens, the database
+password). `compose.deploy.yml` must not publish a port and must keep the
+service name `app`.
