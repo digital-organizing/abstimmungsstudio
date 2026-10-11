@@ -370,16 +370,17 @@ Every push to `main` builds the image, publishes it to
 `ghcr.io/digital-organizing/abstimmungsstudio` and deploys it to the
 organisation's app platform, where the app runs as `abstimmungsstudio-prod` on
 the host `app-daily`. The deploy job joins the tailnet, logs in to the
-app host through Tailscale SSH and hands over `compose.deploy.yml`; its steps
+app host through Tailscale SSH and asks for the deploy; its steps
 are a copy of the shared workflow in the `digital-organizing/infra`
 repository, which this public repository cannot call. It
 needs the repository secrets `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET` and no
 SSH key. The platform runs `python manage.py migrate` before it switches to
 the new image.
 
-What the app gets on the server is decided in the infra repository, not here:
-`apps/abstimmungsstudio.yml` (domain, limits, the settings that are not
-secret) and `secrets/daily/abstimmungsstudio.prod.yaml` (`SECRET_KEY`, the
-InfluxDB token, the object storage keys, the API tokens, the database
-password). `compose.deploy.yml` must not publish a port and must keep the
-service name `app`.
+What runs on the server and what the app gets there is decided in the infra
+repository, not here: `apps/abstimmungsstudio.compose.yml` (the services:
+web, worker, scheduler, Redis), `apps/abstimmungsstudio.yml` (domain, limits,
+the settings that are not secret) and
+`secrets/daily/abstimmungsstudio.prod.yaml` (`SECRET_KEY`, the InfluxDB token,
+the object storage keys, the API tokens, the database password). A new
+service or a changed command is a change there.
